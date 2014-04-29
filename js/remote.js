@@ -45,16 +45,27 @@ function onChangeUpdate() {
 
 function setVolume(volume) {
     var setVolume = '{"jsonrpc": "2.0", "method": "Application.SetVolume", "params": {"volume":' + volume + '} , "id" : 1}';
-    ajaxPost(setVolume, function () {
-    });
+    ajaxPost(setVolume, function() {});
+}
+
+function seek(playerId, timeInSeconds) {
+    var hours = Math.floor(timeInSeconds / 3600);
+    var minutes = Math.floor((timeInSeconds % 3600) / 60);
+    var seconds = Math.floor((timeInSeconds % 3600) % 60);
+
+    var seek = '{"jsonrpc":"2.0", "method":"Player.Seek", "params":{"playerid":' + playerId + ', "value":{"hours":' + hours + ', "minutes":' + minutes + ', "seconds":' + seconds + '}},"id":1}';
+    ajaxPost(seek, function() {});
 }
 
 function doAction(item, callback) {
     getActivePlayerId(function (playerid) {
         if (playerid != null) {
             var action = '{"jsonrpc": "2.0", "method": "' + item + '", "params":{"playerid":' + playerid + '}, "id" : 1}';
-            ajaxPost(action, function (result) {
-                callback(result);
+            ajaxPost(action, function (response) {
+                if (item == actions.PlayPause) {
+                    isPlaying = response.result.speed > 0;
+                }
+                callback(response);
             });
         } else {
             callback(null);
@@ -183,8 +194,6 @@ function clearFavouritesTable() {
     initFavouritesTable();
 }
 
-
-
 function createFavouritesActionButtons(i) {
     var name = favArray[i][0];
     var url = favArray[i][1];
@@ -197,6 +206,71 @@ function createFavouritesActionButtons(i) {
     $('#favRemoveBtn' + i).click(function () {
         removeFromFavourites(i);
     });
+}
+
+function initFocusFix() {
+    //Fix focus issues when using keyboard bindings
+    $('input,button,#volume_control').mouseout(function(event) {
+        $('#focusAnchor').focus();
+    });
+}
+
+var watchdog;
+var lastIsActive = false;
+var watchDogCounter = 0;
+var isPlaying = false;
+function initWatchdog() {
+    clearInterval(watchdog);
+    var $seeker = $('#seeker');
+
+    getSpeed(function(speed) {
+        if (speed > 0) {
+            isPlaying = true;
+        }
+    });
+
+    watchdog = setInterval(function () {
+        var sliderValue = $seeker.slider("value");
+        getActivePlayerId(function(playerId) {
+            if (playerId == 0 || playerId == 1) {
+                if (!lastIsActive) {
+                    $seeker.slider({
+                        disabled:false
+                    });
+
+                    onChangeUpdate();
+                    lastIsActive = true;
+                }
+
+                if (watchDogCounter % 5 == 0) {
+                    getPlayerTimes(playerId, function(timeInSeconds, totalTimeInSeconds){
+                        $seeker.slider("value", timeInSeconds);
+                        $seeker.slider("max", totalTimeInSeconds);
+                    });
+
+                    getSpeed(function(speed) {
+                        isPlaying = speed > 0;
+                    });
+                } else {
+                    if (isPlaying) {
+                        $seeker.slider("value", sliderValue + 1);
+                    }
+                }
+            } else {
+                if (lastIsActive) {
+                    $seeker.slider({
+                        value: 0,
+                        disabled: true
+                    });
+
+                    onChangeUpdate();
+                    lastIsActive = false;
+                }
+            }
+        });
+
+        watchDogCounter++;
+    }, 1000);
 }
 
 function initConnectivity(callback) {
@@ -285,7 +359,9 @@ function initQueueCount() {
             getPlaylistPosition(function (playlistPosition) {
                 var leftOvers = playlistSize - playlistPosition;
                 if (playlistPosition != null) {
-                    console.log("playlistSize:" + playlistSize + ", playlistPosition:" + playlistPosition);
+                    if (isDebugLogsEnabled()) {
+                        console.log("playlistSize:" + playlistSize + ", playlistPosition:" + playlistPosition);
+                    }
                     $("#queueVideoButton").html("+Queue(" + leftOvers + ")");
                     return;
                 }
@@ -344,6 +420,7 @@ function initRepeatMode() {
     }
 }
 
+var lastRecordedWheelTime = 0;
 function initVolumeSlider() {
     getVolumeLevel(function (volume) {
         $('#volume_control').slider({
@@ -354,9 +431,99 @@ function initVolumeSlider() {
             value: volume,
             slide: function (event, ui) {
                 setVolume(ui.value);
+            },
+            change: function (event, ui) {
+                setVolume(ui.value);
             }
         });
     });
+
+    $('#volume_control').bind("mousewheel", function (e) {
+        var $volumecontrol = $('#volume_control');
+        var addDiff = 1;
+        var diff = e.originalEvent.timeStamp - lastRecordedWheelTime;
+        if (diff < 10) {
+            addDiff+=15;
+        } else if (diff < 100) {
+            addDiff+=5;
+        } else if (diff < 150) {
+            addDiff+=2;
+        }
+        if (e.originalEvent.wheelDelta > 0) {
+            $volumecontrol.slider("value", $volumecontrol.slider("value") + addDiff);
+        } else {
+            $volumecontrol.slider("value", $volumecontrol.slider("value") - addDiff);
+        }
+
+        lastRecordedWheelTime = e.originalEvent.timeStamp;
+    });
+}
+
+function initSeekerSlider() {
+    var $seeker = $('#seeker');
+    $seeker.slider({
+        animate: 'fast',
+        orientation: "horizontal",
+        range: "min",
+        min: 0,
+        start: function(event, ui) {
+            clearInterval(watchdog);
+            $('#scrollerTime').show();
+        },
+        slide: function (event, ui) {
+            $(document).bind('mousemove', function(e) {
+                var $scrollerTime = $('#scrollerTime');
+                $scrollerTime.css({
+                    left: e.pageX + 18,
+                    top: e.pageY + 8
+                });
+                $scrollerTime.html(formatSeconds(ui.value));
+            });
+        },
+        stop: function (event, ui) {
+            initWatchdog();
+            getActivePlayerId(function (playerId) {
+                if (playerId == 0 || playerId == 1) {
+                    seek(playerId, ui.value);
+                }
+            });
+            $('#scrollerTime').hide();
+        }
+    });
+
+    getActivePlayerId(function (playerId, type) {
+        if (playerId == 0 || playerId == 1) {
+            getPlayerTimes(playerId, function (timeInSeconds, totalTimeInSeconds) {
+                if (timeInSeconds >= 0 && totalTimeInSeconds >= 0) {
+                    $seeker.slider({
+                        max: totalTimeInSeconds,
+                        value: timeInSeconds
+                    });
+                }
+            });
+        } else {
+            $seeker.slider({
+                max: 100,
+                value: 0
+            });
+            $seeker.slider({disabled:true});    //Setting disabled on a separate line to make sure the slider appeared 'dimmed'.
+        }
+    });
+}
+
+function formatSeconds(timeInSeconds) {
+    var hours = Math.floor(timeInSeconds / 3600);
+    var minutes = Math.floor((timeInSeconds % 3600) / 60);
+    var seconds = Math.floor((timeInSeconds % 3600) % 60);
+    var output = '';
+    if (hours > 0) {
+        output = output + hours.toString() + ":";
+    }
+
+    output = output + ('0' + minutes).slice(-2) + ':';
+    output = output + ('0' + seconds).slice(-2);
+
+    return output;
 }
 
 function initPlaylistNumbers() {
@@ -402,10 +569,13 @@ function initProfiles() {
 
 function initKeyBindings() {
     $(document).keydown(function (e) {
+        $('#focusAnchor').focus();
         var keyCode = e.keyCode || e.which,
             keypress = {left: 37, up: 38, right: 39, down: 40, backspace: 8, enter: 13, c: 67, i: 73 };
 
-        console.log(e.keyCode);
+        if (isDebugLogsEnabled()) {
+            console.log(e.keyCode);
+        }
 
         switch (keyCode) {
             case keypress.left:

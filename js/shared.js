@@ -1,10 +1,11 @@
-var currentVersion = 1430;
+var currentVersion = 1601;
 
 var storageKeys = {
     "showRepeat": "showRepeat",
     "profiles": "profiles",
     "enableMultiHost": "enableMultiHost",
-    "selectedHost": "selectedHost"
+    "selectedHost": "selectedHost",
+    "enableDebugLogs": "enableDebugLogs"
 };
 
 var actions = {
@@ -19,6 +20,7 @@ var actions = {
 var validUrlPatterns = [
     ".*youtube.com/watch.*",
     "^.*vimeo.com.*/\\d+.*$",
+    "^.*freeride.se.*/\\d+.*$",
     ".*collegehumor.com/[video|embed]+/\\d+/\\w+",
     ".*dailymotion.com/video/.*",
     ".*ebaumsworld.com/video/.*",
@@ -27,13 +29,22 @@ var validUrlPatterns = [
     ".*mixcloud.com.*",
     ".*liveleak.com/view.*",
     "^(https|http)://(www\.)?twitch.tv/([^_&/#\?]+).*$",
-    ".*hulu.com/watch.*"
+    ".*hulu.com/watch.*",
+	".*ardmediathek.de/.*documentId=.*"
 ];
 
 var validPlaylistPatterns = [
     ".*youtube.com/playlist.*list=.*",
     "(https|http)://(www\.)?youtube.com/watch?.*list=.+",
     "(https|http)://(www\.)?soundcloud.com/[^_&/#\?]+/sets/[^_&/#\?]+"
+];
+
+var supportedVideoExtensions = [
+    'mp3', 'ogg', 'midi', 'wav', 'aiff', 'aac', 'flac', 'ape', 'wma', 'm4a', 'mka'
+];
+
+var supportedAudioExtensions = [
+    'avi', 'wmv', 'asf', 'flv', 'mkv', 'mp4'
 ];
 
 function getURL() {
@@ -76,6 +87,12 @@ function isMultiHostEnabled() {
     var enableMultiHost = localStorage[storageKeys.enableMultiHost];
 
     return enableMultiHost != null && enableMultiHost == 'true';
+}
+
+function isDebugLogsEnabled() {
+    var enableDebugLogs = localStorage[storageKeys.enableDebugLogs];
+
+    return enableDebugLogs != null && enableDebugLogs == 'true';
 }
 
 function getAllProfiles() {

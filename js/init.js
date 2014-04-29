@@ -1,7 +1,10 @@
 $(document).ready( function() {
+    initFocusFix();
+    initWatchdog();
     initProfiles();
     initConnectivity(function() {
         initJsonVersion();
+        initSeekerSlider();
         initVolumeSlider();
         initKeyBindings();
 
